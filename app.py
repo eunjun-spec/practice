@@ -71,7 +71,14 @@ def echo_skill():
 def naver_news_skill():
     data = request.get_json(silent=True) or {}
     user_input = data.get("userRequest", {}).get("utterance", "").strip()
-
+    
+    # 컨텍스트에서 검색어 꺼내는 것도 가능 (선택사항)
+    contexts = data.get("contexts", [])
+    for ctx in contexts:
+        if ctx.get("name") == "news_search":
+            params = ctx.get("params", {})
+            # 필요한 경우 파라미터 활용 가능
+            break
     if not user_input:
         return jsonify({
             "version": "2.0",
