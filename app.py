@@ -119,8 +119,7 @@ def google_news():
     return jsonify(kakao_text(result))
 
 
-# ChatGPT 파라미터 연동
-@app.route("/gemini-param", methods=["POST"])
+@app.route("/chatgpt-param", methods=["POST"])
 def chatgpt_param():
     data = request.get_json(silent=True) or {}
 
@@ -153,7 +152,6 @@ def chatgpt_param():
         result_text = f"ChatGPT 호출 중 오류: {str(e)}"
 
     return jsonify(kakao_text(result_text))
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
