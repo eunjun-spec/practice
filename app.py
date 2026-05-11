@@ -119,32 +119,41 @@ def google_news():
     return jsonify(kakao_text(result))
 
 
-# 5. 파라미터로 Gemini 연동하기
+# ChatGPT 파라미터 연동
 @app.route("/gemini-param", methods=["POST"])
-def gemini_param():
+def chatgpt_param():
     data = request.get_json(silent=True) or {}
+
     tt = data.get("action", {}).get("params", {}).get("파라미터", "").strip()
 
     if not tt:
         return jsonify(kakao_text("파라미터 값이 없습니다."))
 
-    api_key = os.getenv("GEMINI_API_KEY")
+    api_key = os.getenv("OPENAI_API_KEY")
+
     if not api_key:
-        return jsonify(kakao_text("GEMINI_API_KEY 환경변수가 설정되지 않았습니다."))
+        return jsonify(kakao_text("OPENAI_API_KEY 환경변수가 설정되지 않았습니다."))
 
     try:
-        client = genai.Client(api_key=api_key)
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=tt
+        client = OpenAI(api_key=api_key)
+
+        response = client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[
+                {
+                    "role": "user",
+                    "content": tt
+                }
+            ]
         )
-        result_text = response.text if response.text else "응답이 비어 있습니다."
+
+        result_text = response.choices[0].message.content
+
     except Exception as e:
-        result_text = f"Gemini 호출 중 오류: {str(e)}"
+        result_text = f"ChatGPT 호출 중 오류: {str(e)}"
 
     return jsonify(kakao_text(result_text))
 
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
-
