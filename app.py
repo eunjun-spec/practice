@@ -36,14 +36,19 @@ def kakao_text(text):
 def home():
     return "Server is running."
 
-@app.route("/key-test")
+@app.route("/key-test", methods=["POST"])
 def key_test():
+
     key = os.getenv("GEMINI_API_KEY")
 
     if not key:
-        return "GEMINI_API_KEY 없음"
+        return jsonify(kakao_text("KEY 없음"))
 
-    return f"GEMINI_API_KEY 존재: {key[:15]}"
+    return jsonify(
+        kakao_text(
+            f"KEY 존재: {key[:15]}"
+        )
+    )
 
 
 @app.route("/travel", methods=["POST"])
