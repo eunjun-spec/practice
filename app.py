@@ -34,6 +34,15 @@ def kakao_text(text):
 def home():
     return "Server is running."
 
+@app.route("/key-test")
+def key_test():
+    key = os.getenv("OPENAI_API_KEY")
+
+    if not key:
+        return "KEY 없음"
+
+    return f"KEY 존재: {key[:15]}"
+
 
 @app.route("/travel", methods=["POST"])
 def travel():
