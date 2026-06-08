@@ -4,7 +4,7 @@ import requests
 import urllib.parse
 from flask import Flask, request, jsonify
 from bs4 import BeautifulSoup
-from openai import OpenAI
+import google.generativeai as genai
 from dotenv import load_dotenv
 
 # .env 파일에서 환경변수 로드
@@ -12,8 +12,10 @@ load_dotenv()
 
 app = Flask(__name__)
 
-# OpenAI 클라이언트 초기화
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+genai.configure(
+    api_key=os.getenv("GEMINI_API_KEY")
+)
+
 
 def kakao_text(text):
     """카카오톡 텍스트 응답 규격 생성 (1000자 제한 안전장치)"""
@@ -36,63 +38,65 @@ def home():
 
 @app.route("/key-test")
 def key_test():
-    key = os.getenv("OPENAI_API_KEY")
+    key = os.getenv("GEMINI_API_KEY")
 
     if not key:
-        return "KEY 없음"
+        return "GEMINI_API_KEY 없음"
 
-    return f"KEY 존재: {key[:15]}"
+    return f"GEMINI_API_KEY 존재: {key[:15]}"
 
 
 @app.route("/travel", methods=["POST"])
 def travel():
+
     data = request.get_json(silent=True) or {}
 
     country = data.get("action", {}).get("params", {}).get("country", "")
 
     feeling = data.get("userRequest", {}).get("utterance", "").strip()
 
-    if not feeling:
-        return jsonify(kakao_text("원하시는 여행 스타일을 입력해주세요."))
-
-    if country == "in":
-        area = "대한민국"
-    else:
-        area = "해외"
+    area = "국내" if country == "in" else "해외"
 
     prompt = f"""
+당신은 여행 전문가입니다.
+
 사용자가 {area} 여행을 원합니다.
 
 원하는 여행 스타일:
 {feeling}
 
-조건
-1. 여행지 3곳 추천
-2. 추천 이유 설명
-3. 보기 쉽게 작성
-4. 100자 이내
+실존하는 여행지 3곳 추천
+
+형식:
+
+1. 여행지명
+- 추천 이유
+
+2. 여행지명
+- 추천 이유
+
+3. 여행지명
+- 추천 이유
+
+800자 이내
 """
 
     try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "당신은 전문 여행 플래너입니다."
-                },
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ],
-            temperature=0.8,
-            max_tokens=500
+
+        model = genai.GenerativeModel(
+            "gemini-2.5-flash"
         )
 
-        result = response.choices[0].message.content
+        response = model.generate_content(
+            prompt
+        )
 
-        return jsonify(kakao_text(result))
+        return jsonify(
+            kakao_text(response.text)
+        )
 
     except Exception as e:
-        return jsonify(kakao_text(str(e)))
+
+        return jsonify(
+            kakao_text(f"오류 발생: {str(e)}")
+        )
