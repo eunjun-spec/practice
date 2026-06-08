@@ -36,7 +36,7 @@ def kakao_text(text):
 def home():
     return "Server is running."
 
-@app.route("/key-test", methods=["POST"])
+@app.route("/key-test", methods=["GET", "POST"])
 def key_test():
 
     key = os.getenv("GEMINI_API_KEY")
