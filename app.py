@@ -1,3 +1,17 @@
+import json
+
+from db import (
+    init_db,
+    save_state,
+    get_state,
+    clear_state,
+    save_schedule,
+    get_schedules,
+    delete_latest
+)
+
+init_db()
+
 import os
 import random
 import requests
