@@ -100,3 +100,294 @@ def travel():
         return jsonify(
             kakao_text(f"오류 발생: {str(e)}")
         )
+
+
+@app.route("/schedule_create", methods=["POST"])
+def schedule_create():
+
+    data = request.get_json(silent=True) or {}
+
+    user_id = (
+        data
+        .get("userRequest", {})
+        .get("user", {})
+        .get("id", "guest")
+    )
+
+    save_state(
+        user_id,
+        "date",
+        {}
+    )
+
+    return jsonify(
+        kakao_text(
+            "여행 날짜 입력\n예: 2026-08-01~2026-08-03"
+        )
+    )
+
+
+@app.route("/schedule_date", methods=["POST"])
+def schedule_date():
+
+    data = request.get_json(silent=True) or {}
+
+    user_id = (
+        data
+        .get("userRequest", {})
+        .get("user", {})
+        .get("id", "guest")
+    )
+
+    text = (
+        data
+        .get("userRequest", {})
+        .get("utterance", "")
+        .strip()
+    )
+
+    try:
+        start, end = text.split("~")
+
+    except:
+
+        return jsonify(
+            kakao_text(
+                "형식 오류"
+            )
+        )
+
+    save_state(
+        user_id,
+        "place",
+        {
+            "start": start.strip(),
+            "end": end.strip(),
+            "places": []
+        }
+    )
+
+    return jsonify(
+        kakao_text(
+            "장소 입력"
+        )
+    )
+
+
+@app.route("/schedule_place", methods=["POST"])
+def schedule_place():
+
+    data = request.get_json(silent=True) or {}
+
+    user_id = (
+        data
+        .get("userRequest", {})
+        .get("user", {})
+        .get("id", "guest")
+    )
+
+    text = (
+        data
+        .get("userRequest", {})
+        .get("utterance", "")
+        .strip()
+    )
+
+    state = get_state(user_id)
+
+    if not state:
+
+        return jsonify(
+            kakao_text(
+                "먼저 일정 생성"
+            )
+        )
+
+    temp = state["temp"]
+
+    temp["places"].append(
+        text
+    )
+
+    save_state(
+        user_id,
+        "place",
+        temp
+    )
+
+    result = []
+
+    for i, p in enumerate(
+        temp["places"],
+        1
+    ):
+
+        result.append(
+            f"{i}. {p}"
+        )
+
+    return jsonify(
+        kakao_text(
+            "\n".join(result)
+        )
+    )
+
+
+@app.route("/schedule_order", methods=["POST"])
+def schedule_order():
+
+    data = request.get_json(silent=True) or {}
+
+    user_id = (
+        data
+        .get("userRequest", {})
+        .get("user", {})
+        .get("id", "guest")
+    )
+
+    text = (
+        data
+        .get("userRequest", {})
+        .get("utterance", "")
+        .strip()
+    )
+
+    state = get_state(user_id)
+
+    temp = state["temp"]
+
+    try:
+
+        a, b = map(
+            int,
+            text.split()
+        )
+
+        temp["places"][a-1], temp["places"][b-1] = (
+            temp["places"][b-1],
+            temp["places"][a-1]
+        )
+
+    except:
+
+        return jsonify(
+            kakao_text(
+                "예: 1 2"
+            )
+        )
+
+    save_state(
+        user_id,
+        "place",
+        temp
+    )
+
+    return jsonify(
+        kakao_text(
+            "순서 변경 완료"
+        )
+    )
+
+
+@app.route("/schedule_save", methods=["POST"])
+def schedule_save():
+
+    data = request.get_json(silent=True) or {}
+
+    user_id = (
+        data
+        .get("userRequest", {})
+        .get("user", {})
+        .get("id", "guest")
+    )
+
+    state = get_state(
+        user_id
+    )
+
+    temp = (
+        state["temp"]
+    )
+
+    save_schedule(
+        user_id,
+        temp["start"],
+        temp["end"],
+        temp["places"]
+    )
+
+    clear_state(
+        user_id
+    )
+
+    return jsonify(
+        kakao_text(
+            "저장 완료"
+        )
+    )
+
+
+@app.route("/schedule_view", methods=["POST"])
+def schedule_view():
+
+    data = request.get_json(silent=True) or {}
+
+    user_id = (
+        data
+        .get("userRequest", {})
+        .get("user", {})
+        .get("id", "guest")
+    )
+
+    rows = get_schedules(
+        user_id
+    )
+
+    result = []
+
+    for r in rows:
+
+        places = json.loads(
+            r["places"]
+        )
+
+        result.append(
+            f"""
+{r["start_date"]}
+~
+{r["end_date"]}
+
+{chr(10).join(places)}
+"""
+        )
+
+    return jsonify(
+        kakao_text(
+            "\n\n".join(
+                result
+            )
+        )
+    )
+
+
+@app.route("/schedule_delete", methods=["POST"])
+def schedule_delete():
+
+    data = request.get_json(silent=True) or {}
+
+    user_id = (
+        data
+        .get("userRequest", {})
+        .get("user", {})
+        .get("id", "guest")
+    )
+
+    delete_latest(
+        user_id
+    )
+
+    return jsonify(
+        kakao_text(
+            "삭제 완료"
+        )
+    )
