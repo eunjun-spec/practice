@@ -7,7 +7,9 @@ DB = "travel.db"
 
 def connect():
 
-    conn = sqlite3.connect(DB)
+    conn = sqlite3.connect(
+        DB
+    )
 
     conn.row_factory = sqlite3.Row
 
@@ -155,6 +157,7 @@ def save_schedule(
         places
 
     )
+
     VALUES
     (
         ?, ?, ?, ?
