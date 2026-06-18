@@ -5,7 +5,8 @@ import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request
-import google.generativeai as genai
+# 1. Gemini 대신 Anthropic 클라이언트 임포트
+from anthropic import Anthropic
 
 from db import (
     clear_state,
@@ -20,7 +21,9 @@ from db import (
 # 환경 변수 로드 및 초기화
 load_dotenv()
 app = Flask(__name__)
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+
+# 2. Anthropic 클라이언트 초기화 (.env의 ANTHROPIC_API_KEY를 자동으로 읽어옵니다)
+client = Anthropic()
 init_db()
 
 
@@ -48,7 +51,8 @@ def home():
 
 @app.route("/key-test", methods=["GET", "POST"])
 def key_test():
-    key = os.getenv("GEMINI_API_KEY")
+    # 3. API 키 검증 로직 변경
+    key = os.getenv("ANTHROPIC_API_KEY")
     if not key:
         return jsonify(kakao_text("KEY 없음"))
     return jsonify(kakao_text(f"KEY 존재: {key[:15]}"))
@@ -62,10 +66,9 @@ def travel():
     feeling = data.get("userRequest", {}).get("utterance", "").strip()
     area = "국내" if country == "in" else "해외"
 
-    prompt = f"""
-당신은 여행 전문가입니다.
-
-사용자가 {area} 여행을 원합니다.
+    # prompt에서 시스템 지침(역할 정의) 분리하기 위해 수정
+    system_prompt = "당신은 여행 전문가입니다."
+    user_prompt = f"""사용자가 {area} 여행을 원합니다.
 
 원하는 여행 스타일:
 {feeling}
@@ -78,13 +81,21 @@ def travel():
 
 2. 여행지명
 
-다른 설명 없이 출력
-"""
+다른 설명 없이 출력"""
 
     try:
-        model = genai.GenerativeModel("gemini-2.5-flash")
-        response = model.generate_content(prompt)
-        return jsonify(kakao_text(response.text))
+        # 4. Claude API 호출 방식으로 변경
+        response = client.messages.create(
+            model="claude-3-5-sonnet-20241022",  # 추천 성능이 가장 뛰어난 Claude 3.5 Sonnet 모델
+            max_tokens=500,
+            system=system_prompt,
+            messages=[
+                {"role": "user", "content": user_prompt}
+            ]
+        )
+        
+        # response.content[0].text 로 텍스트 추출
+        return jsonify(kakao_text(response.content[0].text))
     except Exception as e:
         return jsonify(kakao_text(str(e)))
 
