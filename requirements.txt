@@ -4,4 +4,4 @@ requests==2.32.3
 beautifulsoup4==4.12.3
 python-dotenv
 lxml
-google-generativeai
+anthropic==0.45.0
