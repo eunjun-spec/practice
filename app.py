@@ -1,44 +1,32 @@
 import os
 import json
-import requests
 import urllib.parse
-
-from flask import Flask, request, jsonify
+import requests
 from bs4 import BeautifulSoup
-import google.generativeai as genai
 from dotenv import load_dotenv
+from flask import Flask, jsonify, request
+import google.generativeai as genai
 
 from db import (
-    init_db,
-    save_state,
-    get_state,
     clear_state,
-    save_schedule,
+    delete_latest,
     get_schedules,
-    delete_latest
+    get_state,
+    init_db,
+    save_schedule,
+    save_state,
 )
 
+# 환경 변수 로드 및 초기화
 load_dotenv()
-
 app = Flask(__name__)
-
-genai.configure(
-    api_key=os.getenv(
-        "GEMINI_API_KEY"
-    )
-)
-
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 init_db()
 
 
 def kakao_text(text):
-
-    safe_text = (
-        text[:950] + "..."
-        if len(text) > 950
-        else text
-    )
-
+    """카카오톡 SimpleText 포맷에 맞춰 응답을 변환 (최대 950자 제한)"""
+    safe_text = text[:950] + "..." if len(text) > 950 else text
     return {
         "version": "2.0",
         "template": {
@@ -55,83 +43,24 @@ def kakao_text(text):
 
 @app.route("/", methods=["GET"])
 def home():
-
     return "Server is running."
 
 
-@app.route(
-    "/key-test",
-    methods=["GET", "POST"]
-)
+@app.route("/key-test", methods=["GET", "POST"])
 def key_test():
-
-    key = os.getenv(
-        "GEMINI_API_KEY"
-    )
-
+    key = os.getenv("GEMINI_API_KEY")
     if not key:
-
-        return jsonify(
-            kakao_text(
-                "KEY 없음"
-            )
-        )
-
-    return jsonify(
-        kakao_text(
-            f"KEY 존재: {key[:15]}"
-        )
-    )
+        return jsonify(kakao_text("KEY 없음"))
+    return jsonify(kakao_text(f"KEY 존재: {key[:15]}"))
 
 
-@app.route(
-    "/travel",
-    methods=["POST"]
-)
+@app.route("/travel", methods=["POST"])
 def travel():
-
-    data = (
-        request
-        .get_json(
-            silent=True
-        )
-        or {}
-    )
-
-    country = (
-        data
-        .get(
-            "action",
-            {}
-        )
-        .get(
-            "params",
-            {}
-        )
-        .get(
-            "country",
-            ""
-        )
-    )
-
-    feeling = (
-        data
-        .get(
-            "userRequest",
-            {}
-        )
-        .get(
-            "utterance",
-            ""
-        )
-        .strip()
-    )
-
-    area = (
-        "국내"
-        if country == "in"
-        else "해외"
-    )
+    data = request.get_json(silent=True) or {}
+    
+    country = data.get("action", {}).get("params", {}).get("country", "")
+    feeling = data.get("userRequest", {}).get("utterance", "").strip()
+    area = "국내" if country == "in" else "해외"
 
     prompt = f"""
 당신은 여행 전문가입니다.
@@ -153,506 +82,175 @@ def travel():
 """
 
     try:
-
-        model = genai.GenerativeModel(
-            "gemini-2.5-flash"
-        )
-
-        response = (
-            model
-            .generate_content(
-                prompt
-            )
-        )
-
-        return jsonify(
-            kakao_text(
-                response.text
-            )
-        )
-
+        model = genai.GenerativeModel("gemini-2.5-flash")
+        response = model.generate_content(prompt)
+        return jsonify(kakao_text(response.text))
     except Exception as e:
-
-        return jsonify(
-            kakao_text(
-                str(e)
-            )
-        )
+        return jsonify(kakao_text(str(e)))
 
 
-@app.route(
-    "/schedule_create",
-    methods=["POST"]
-)
+@app.route("/schedule_create", methods=["POST"])
 def schedule_create():
+    data = request.get_json(silent=True) or {}
+    user_id = data.get("userRequest", {}).get("user", {}).get("id", "guest")
 
-    data = (
-        request
-        .get_json(
-            silent=True
-        )
-        or {}
-    )
-
-    user_id = (
-        data
-        .get(
-            "userRequest",
-            {}
-        )
-        .get(
-            "user",
-            {}
-        )
-        .get(
-            "id",
-            "guest"
-        )
-    )
-
-    save_state(
-        user_id,
-        "place",
-        {
-            "start": "",
-            "end": "",
-            "places": []
-        }
-    )
-
-    return jsonify(
-        kakao_text(
-            "여행 날짜를 입력해주세요."
-        )
-    )
+    save_state(user_id, "place", {"start": "", "end": "", "places": []})
+    return jsonify(kakao_text("여행 날짜를 입력해주세요."))
 
 
-@app.route(
-    "/schedule_date",
-    methods=["POST"]
-)
+@app.route("/schedule_date", methods=["POST"])
 def schedule_date():
-
-    data = (
-        request
-        .get_json(
-            silent=True
-        )
-        or {}
-    )
-
-    user_id = (
-        data["userRequest"]
-        ["user"]
-        ["id"]
-    )
-
-    date = (
-        data
-        .get(
-            "action",
-            {}
-        )
-        .get(
-            "params",
-            {}
-        )
-        .get(
-            "date",
-            ""
-        )
-    )
-
+    data = request.get_json(silent=True) or {}
+    
     try:
+        user_id = data["userRequest"]["user"]["id"]
+        date = data.get("action", {}).get("params", {}).get("date", "")
+        start, end = date.split("~")
+    except Exception:
+        return jsonify(kakao_text("예: 2026-08-01~2026-08-03"))
 
-        start, end = (
-            date
-            .split("~")
-        )
-
-    except:
-
-        return jsonify(
-            kakao_text(
-                "예: 2026-08-01~2026-08-03"
-            )
-        )
-
-    save_state(
-        user_id,
-        "place",
-        {
-            "start": start.strip(),
-            "end": end.strip(),
-            "places": []
-        }
-    )
-
-    return jsonify(
-        kakao_text(
-            "장소를 계속 입력해주세요."
-        )
-    )
+    save_state(user_id, "place", {
+        "start": start.strip(),
+        "end": end.strip(),
+        "places": []
+    })
+    return jsonify(kakao_text("장소를 계속 입력해주세요."))
 
 
-@app.route(
-    "/schedule_place",
-    methods=["POST"]
-)
+@app.route("/schedule_place", methods=["POST"])
 def schedule_place():
-
-    data = (
-        request
-        .get_json(
-            silent=True
-        )
-        or {}
-    )
-
-    user_id = (
-        data["userRequest"]
-        ["user"]
-        ["id"]
-    )
-
-    place = (
-        data
-        .get(
-            "action",
-            {}
-        )
-        .get(
-            "params",
-            {}
-        )
-        .get(
-            "place",
-            ""
-        )
-    )
-
-    state = (
-        get_state(
-            user_id
-        )
-    )
-
-    if not state:
-
-        return jsonify(
-            kakao_text(
-                "먼저 일정 생성"
-            )
-        )
-
-    temp = (
-        state["temp"]
-    )
-
-    temp["places"].append(
-        place
-    )
-
-    save_state(
-        user_id,
-        "place",
-        temp
-    )
-
-    result = []
-
-    for i, p in enumerate(
-        temp["places"],
-        1
-    ):
-
-        result.append(
-            f"{i}. {p}"
-        )
-
-    return jsonify(
-        kakao_text(
-            "\n".join(
-                result
-            )
-        )
-    )
-
-
-@app.route(
-    "/schedule_order",
-    methods=["POST"]
-)
-def schedule_order():
-
-    data = (
-        request
-        .get_json(
-            silent=True
-        )
-        or {}
-    )
-
-    user_id = (
-        data["userRequest"]
-        ["user"]
-        ["id"]
-    )
-
-    params = (
-        data
-        .get(
-            "action",
-            {}
-        )
-        .get(
-            "params",
-            {}
-        )
-    )
-
+    data = request.get_json(silent=True) or {}
+    
     try:
+        user_id = data["userRequest"]["user"]["id"]
+        place = data.get("action", {}).get("params", {}).get("place", "")
+    except KeyError:
+        return jsonify(kakao_text("잘못된 요청입니다."))
 
-        a = int(
-            params["from"]
-        )
-
-        b = int(
-            params["to"]
-        )
-
-    except:
-
-        return jsonify(
-            kakao_text(
-                "번호 오류"
-            )
-        )
-
-    state = (
-        get_state(
-            user_id
-        )
-    )
-
-    temp = (
-        state["temp"]
-    )
-
-    places = (
-        temp["places"]
-    )
-
-    places[a - 1], places[b - 1] = (
-        places[b - 1],
-        places[a - 1]
-    )
-
-    save_state(
-        user_id,
-        "place",
-        temp
-    )
-
-    return jsonify(
-        kakao_text(
-            "순서 변경 완료"
-        )
-    )
-
-
-@app.route(
-    "/schedule_save",
-    methods=["POST"]
-)
-def schedule_save():
-
-    data = (
-        request
-        .get_json(
-            silent=True
-        )
-        or {}
-    )
-
-    user_id = (
-        data["userRequest"]
-        ["user"]
-        ["id"]
-    )
-
-    state = (
-        get_state(
-            user_id
-        )
-    )
-
+    state = get_state(user_id)
     if not state:
+        return jsonify(kakao_text("먼저 일정 생성"))
 
-        return jsonify(
-            kakao_text(
-                "저장할 일정 없음"
-            )
-        )
+    temp = state["temp"]
+    temp["places"].append(place)
+    save_state(user_id, "place", temp)
 
-    temp = (
-        state["temp"]
-    )
-
-    save_schedule(
-        user_id,
-        temp["start"],
-        temp["end"],
-        temp["places"]
-    )
-
-    clear_state(
-        user_id
-    )
-
-    return jsonify(
-        kakao_text(
-            "저장 완료"
-        )
-    )
+    result = [f"{i}. {p}" for i, p in enumerate(temp["places"], 1)]
+    return jsonify(kakao_text("\n".join(result)))
 
 
-@app.route(
-    "/schedule_view",
-    methods=["POST"]
-)
+@app.route("/schedule_order", methods=["POST"])
+def schedule_order():
+    data = request.get_json(silent=True) or {}
+    
+    try:
+        user_id = data["userRequest"]["user"]["id"]
+        params = data.get("action", {}).get("params", {})
+        a = int(params["from"])
+        b = int(params["to"])
+    except Exception:
+        return jsonify(kakao_text("번호 오류"))
+
+    state = get_state(user_id)
+    temp = state["temp"]
+    places = temp["places"]
+
+    # 두 요소의 순서 바꿈
+    places[a - 1], places[b - 1] = places[b - 1], places[a - 1]
+    save_state(user_id, "place", temp)
+
+    return jsonify(kakao_text("순서 변경 완료"))
+
+
+@app.route("/schedule_save", methods=["POST"])
+def schedule_save():
+    data = request.get_json(silent=True) or {}
+    
+    try:
+        user_id = data["userRequest"]["user"]["id"]
+    except KeyError:
+        return jsonify(kakao_text("잘못된 요청입니다."))
+
+    state = get_state(user_id)
+    if not state:
+        return jsonify(kakao_text("저장할 일정 없음"))
+
+    temp = state["temp"]
+    save_schedule(user_id, temp["start"], temp["end"], temp["places"])
+    clear_state(user_id)
+
+    return jsonify(kakao_text("저장 완료"))
+
+
+@app.route("/schedule_view", methods=["POST"])
 def schedule_view():
+    data = request.get_json(silent=True) or {}
+    
+    try:
+        user_id = data["userRequest"]["user"]["id"]
+    except KeyError:
+        return jsonify(kakao_text("잘못된 요청입니다."))
 
-    data = (
-        request
-        .get_json(
-            silent=True
-        )
-        or {}
-    )
-
-    user_id = (
-        data["userRequest"]
-        ["user"]
-        ["id"]
-    )
-
-    rows = (
-        get_schedules(
-            user_id
-        )
-    )
-
+    rows = get_schedules(user_id)
     if not rows:
-
-        return jsonify(
-            kakao_text(
-                "일정 없음"
-            )
-        )
+        return jsonify(kakao_text("일정 없음"))
 
     result = []
-
     for r in rows:
+        places = json.loads(r["places"])
+        places_str = " / ".join(places)
+        result.append(f"{r['start_date']}\n~\n{r['end_date']}\n\n{places_str}")
 
-        places = (
-            json.loads(
-                r["places"]
-            )
-        )
-
-        result.append(
-            f"""
-{r["start_date"]}
-~
-{r["end_date"]}
-
-{" / ".join(places)}
-"""
-        )
-
-    return jsonify(
-        kakao_text(
-            "\n\n".join(
-                result
-            )
-        )
-    )
+    return jsonify(kakao_text("\n\n".join(result)))
 
 
-@app.route(
-    "/schedule_delete",
-    methods=["POST"]
-)
+@app.route("/schedule_delete", methods=["POST"])
 def schedule_delete():
+    data = request.get_json(silent=True) or {}
+    
+    try:
+        user_id = data["userRequest"]["user"]["id"]
+    except KeyError:
+        return jsonify(kakao_text("잘못된 요청입니다."))
 
-    data = (
-        request
-        .get_json(
-            silent=True
-        )
-        or {}
-    )
-
-    user_id = (
-        data["userRequest"]
-        ["user"]
-        ["id"]
-    )
-
-    delete_latest(
-        user_id
-    )
-
-    return jsonify(
-        kakao_text(
-            "최근 일정 삭제 완료"
-        )
-    )
+    delete_latest(user_id)
+    return jsonify(kakao_text("최근 일정 삭제 완료"))
 
 
 @app.route("/travel_review", methods=["POST"])
 def travel_review():
     data = request.get_json(silent=True) or {}
-    
-    # 1. 카카오톡 오픈빌더 버튼 설정에서 넘겨줄 파라미터 이름 (예: area)
-    # 오픈빌더에서 설정한 파라미터 key 이름과 일치해야 합니다.
-    area = (
-        data.get("action", {})
-        .get("params", {})
-        .get("area", "")
-        .strip()
-    )
+    area = data.get("action", {}).get("params", {}).get("area", "").strip()
 
     if not area:
         return jsonify(kakao_text("여행지 정보가 올바르게 전달되지 않았습니다."))
 
-    # 2. 네이버 블로그 검색 URL 생성 ("제주 여행 후기", "일본 여행 후기" 등)
     search_query = f"{area} 여행 후기"
     encoded_query = urllib.parse.quote(search_query)
     url = f"https://search.naver.com/search.naver?ssc=tab.blog.all&query={encoded_query}"
     
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        )
     }
 
     try:
-        # 3. 크롤링 진행
         r = requests.get(url, headers=headers, timeout=5)
         soup = BeautifulSoup(r.text, "html.parser")
-        
-        # 네이버 블로그 제목 리스트 추출
         review_elements = soup.select("a.title_link")
 
         reviews = []
-        for element in review_elements[:5]: # 상위 5개 추출
+        for element in review_elements[:5]:
             title = element.get_text(strip=True)
             if title:
                 reviews.append(title)
 
-        # 4. 결과 조립 후 카카오톡으로 반환
         if reviews:
-            result = f"✈️ [{area}] 최신 여행 후기 검색 결과입니다:\n\n" + "\n\n".join([f"{i+1}. {t}" for i, t in enumerate(reviews)])
+            review_list = [f"{i+1}. {t}" for i, t in enumerate(reviews)]
+            result = f"✈️ [{area}] 최신 여행 후기 검색 결과입니다:\n\n" + "\n\n".join(review_list)
         else:
             result = f"[{area}]에 대한 최신 여행 후기를 찾지 못했습니다."
 
@@ -660,10 +258,7 @@ def travel_review():
         result = f"여행 후기 크롤링 중 오류 발생: {str(e)}"
 
     return jsonify(kakao_text(result))
-    
-if __name__ == "__main__":
 
-    app.run(
-        host="0.0.0.0",
-        port=5000
-    )
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
