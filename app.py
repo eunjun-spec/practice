@@ -611,6 +611,56 @@ def schedule_delete():
     )
 
 
+@app.route("/travel_review", methods=["POST"])
+def travel_review():
+    data = request.get_json(silent=True) or {}
+    
+    # 1. 카카오톡 오픈빌더 버튼 설정에서 넘겨줄 파라미터 이름 (예: area)
+    # 오픈빌더에서 설정한 파라미터 key 이름과 일치해야 합니다.
+    area = (
+        data.get("action", {})
+        .get("params", {})
+        .get("area", "")
+        .strip()
+    )
+
+    if not area:
+        return jsonify(kakao_text("여행지 정보가 올바르게 전달되지 않았습니다."))
+
+    # 2. 네이버 블로그 검색 URL 생성 ("제주 여행 후기", "일본 여행 후기" 등)
+    search_query = f"{area} 여행 후기"
+    encoded_query = urllib.parse.quote(search_query)
+    url = f"https://search.naver.com/search.naver?ssc=tab.blog.all&query={encoded_query}"
+    
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+
+    try:
+        # 3. 크롤링 진행
+        r = requests.get(url, headers=headers, timeout=5)
+        soup = BeautifulSoup(r.text, "html.parser")
+        
+        # 네이버 블로그 제목 리스트 추출
+        review_elements = soup.select("a.title_link")
+
+        reviews = []
+        for element in review_elements[:5]: # 상위 5개 추출
+            title = element.get_text(strip=True)
+            if title:
+                reviews.append(title)
+
+        # 4. 결과 조립 후 카카오톡으로 반환
+        if reviews:
+            result = f"✈️ [{area}] 최신 여행 후기 검색 결과입니다:\n\n" + "\n\n".join([f"{i+1}. {t}" for i, t in enumerate(reviews)])
+        else:
+            result = f"[{area}]에 대한 최신 여행 후기를 찾지 못했습니다."
+
+    except Exception as e:
+        result = f"여행 후기 크롤링 중 오류 발생: {str(e)}"
+
+    return jsonify(kakao_text(result))
+    
 if __name__ == "__main__":
 
     app.run(
