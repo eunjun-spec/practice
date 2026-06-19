@@ -285,37 +285,34 @@ def travel_review():
     if not area:
         return jsonify(kakao_text("여행지 정보가 올바르게 전달되지 않았습니다."))
 
-    # 1. 네이버 블로그 섹션 검색 URL로 변경 (검색어 입력)
-    search_query = f"{area} 여행"
+    # 1. 뷰티풀수프 크롤링을 위해 모바일 검색 URL로 변경 (더 가볍고 구조가 명확함)
+    search_query = f"{area} 여행 후기"
     encoded_query = urllib.parse.quote(search_query)
-    url = f"https://section.blog.naver.com/Search/Post.naver?keyword={encoded_query}"
+    url = f"https://m.search.naver.com/search.naver?where=m_blog&query={encoded_query}"
     
     headers = {
         "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/122.0.0.0 Safari/537.36"
-        ),
-        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
-        "Referer": "https://section.blog.naver.com/BlogHome.naver"
+            "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36"
+        )
     }
 
     try:
-        r = requests.get(url, headers=headers, timeout=5)
+        # 카카오톡 3초 제한을 고려하여 타임아웃을 2.5초로 타이트하게 잡음
+        r = requests.get(url, headers=headers, timeout=2.5)
         soup = BeautifulSoup(r.text, "html.parser")
         
-        # 2. 제시해주신 <a class="text"> 태그 선택자로 맨 위 글 1개만 매핑
-        first_post = soup.select_one("a.text")
+        # 네이버 모바일 블로그 검색 결과의 본문 미리보기 클래스
+        first_post = soup.select_one(".api_txt_lines.dsc_txt")
 
         if first_post:
-            # 3. HTML 태그들을 다 걷어내고 순수한 글자(설명문)만 추출
-            description = first_post.get_text(separator=" ", strip=True)
-            
-            # 카카오톡 출력용 메시지 조립
+            description = first_post.get_text(strip=True)
             result = f"✍️ [{area}] 최신 블로그 여행 후기 요약입니다:\n\n{description}"
         else:
             result = f"[{area}]에 대한 블로그 검색 결과를 찾지 못했습니다."
 
+    except requests.exceptions.Timeout:
+        result = "⏱️ 네이버 응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요."
     except Exception as e:
         result = f"여행 후기 크롤링 중 오류 발생: {str(e)}"
 
