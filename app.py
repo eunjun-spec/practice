@@ -278,7 +278,6 @@ def schedule_delete():
 
     delete_latest(user_id)
     return jsonify(kakao_text("최근 일정 삭제 완료"))
-
 @app.route("/travel_review", methods=["POST"])
 def travel_review():
     data = request.get_json(silent=True) or {}
@@ -287,46 +286,36 @@ def travel_review():
     if not area:
         return jsonify(kakao_text("여행지 정보가 올바르게 전달되지 않았습니다."))
 
-    # 구글에서 '여행지 + 여행 후기'로 검색
-    search_query = f"{area} 여행 후기"
+    # 울산 날씨 코드처럼 사용자가 입력한 [지역명 + 날씨]로 네이버 검색 URL 생성
+    search_query = f"{area} 날씨"
     encoded_query = urllib.parse.quote(search_query)
-    url = f"https://www.google.com/search?q={encoded_query}&hl=ko"
+    url = f"https://search.naver.com/search.naver?query={encoded_query}"
     
-    # 구글 크롤링을 위해 일반 PC 브라우저처럼 보이도록 헤더 설정
+    # 봇 차단을 막기 위해 최소한의 브라우저 헤더 제공
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
 
     try:
-        # 카카오톡 3초 제한을 위해 타임아웃 설정
+        # 기존 코드들과 통일성을 위해 requests 사용 (타임아웃 2.5초 제한)
         r = requests.get(url, headers=headers, timeout=2.5)
         soup = BeautifulSoup(r.text, "html.parser")
-        
-        # 구글 검색 결과의 각 사이트 설명(미리보기 텍스트)을 담고 있는 최신 클래스명들입니다.
-        # 구글은 보통 'VwiC3b' 혹은 'YrbPfc' 클래스를 사용합니다.
-        review_elements = soup.select(".VwiC3b, .YrbPfc")
 
-        if review_elements:
-            # 검색 결과 중 가장 내용이 알찬 첫 번째 혹은 두 번째 리뷰 내용을 가져옵니다.
-            description = ""
-            for el in review_elements[:2]:
-                text = el.get_text(strip=True)
-                if len(text) > 30:  # 너무 짧은 텍스트는 패스
-                    description = text
-                    break
-            
-            if not description:
-                description = review_elements[0].get_text(strip=True)
+        # 💡 울산 날씨 코드의 핵심 로직 모방
+        temps = soup.find("div", class_="temperature_text")
+        summary = soup.find("p", class_="summary")
 
-            result = f"✍️ [{area}] 실제 웹 리뷰 요약입니다:\n\n{description}"
+        if temps and summary:
+            # 예: "☀️ [도쿄] 현재 날씨 정보: 현재 온도5° 어제보다 2° 낮아요 · 맑음"
+            weather_detail = f"🌡️ {temps.get_text(strip=True)} ({summary.get_text(strip=True)})"
+            result = f"☀️ [{area}] 실시간 날씨 정보입니다:\n\n{weather_detail}\n\n즐거운 여행 준비되세요!"
         else:
-            result = f"[{area}]에 대한 실제 리뷰를 구글에서 찾지 못했습니다."
+            result = f"⚠️ [{area}]의 실시간 날씨 정보를 네이버에서 가져오지 못했습니다."
 
     except requests.exceptions.Timeout:
-        result = "⏱️ 리뷰를 읽어오는 중 시간 초과가 발생했습니다. 다시 시도해주세요."
+        result = "⏱️ 네이버 날씨 서버 응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요."
     except Exception as e:
-        result = f"리뷰 크롤링 중 오류 발생: {str(e)}"
+        result = f"날씨 크롤링 중 오류 발생: {str(e)}"
 
     return jsonify(kakao_text(result))
 
