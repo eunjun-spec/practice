@@ -254,7 +254,7 @@ def travel_review():
         review_elements = soup.select("a.title_link")
 
         reviews = []
-        for element in review_elements[:5]:
+        for element in review_elements[:2]:
             title = element.get_text(strip=True)
             if title:
                 reviews.append(title)
