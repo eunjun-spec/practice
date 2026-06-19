@@ -1,5 +1,6 @@
 import os
 import json
+import sqlite3  # 찜 목록 DB를 위해 추가
 import urllib.parse
 import requests
 from bs4 import BeautifulSoup
@@ -17,13 +18,57 @@ from db import (
     save_state,
 )
 
-from db_wish import init_wish_db, save_wish, get_wishlist
-
 app = Flask(__name__)
 # 💡 Render의 환경 변수를 직접 읽어와서 Anthropic 클라이언트에 넘겨줍니다.
 api_key = os.environ.get("ANTHROPIC_API_KEY")
 client = Anthropic(api_key=api_key)
 
+# ==========================================
+# ⭐️ [찜 기능] 내부 DB 로직 (app.py에 통합)
+# ==========================================
+WISH_DB = "wishlist.db"
+
+def init_wish_db():
+    """찜 목록 테이블 초기화"""
+    conn = sqlite3.connect(WISH_DB)
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS wishlist (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            content TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+def save_wish(user_id, content):
+    """찜한 내용 저장"""
+    conn = sqlite3.connect(WISH_DB)
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO wishlist (user_id, content) VALUES (?, ?)",
+        (user_id, content)
+    )
+    conn.commit()
+    conn.close()
+
+def get_wishlist(user_id):
+    """사용자의 찜 목록 가져오기"""
+    conn = sqlite3.connect(WISH_DB)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT content FROM wishlist WHERE user_id = ? ORDER BY id DESC",
+        (user_id,)
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    return [row["content"] for row in rows]
+# ==========================================
+
+# 서비스 시작 시 데이터베이스 파일들 초기화
 init_db()
 init_wish_db()
 
@@ -57,6 +102,7 @@ def key_test():
     if not key:
         return jsonify(kakao_text("KEY 없음"))
     return jsonify(kakao_text(f"KEY 존재: {key[:15]}"))
+
 
 @app.route("/travel", methods=["POST"])
 def travel():
@@ -275,14 +321,13 @@ def travel_review():
 
     return jsonify(kakao_text(result))
 
-    return jsonify(kakao_text(result))
+
 @app.route("/wish_add", methods=["POST"])
 def wish_add():
     data = request.get_json(silent=True) or {}
     
     try:
         user_id = data["userRequest"]["user"]["id"]
-        # 카카오톡 챗봇 블록 설정에서 파라미터 이름을 'content'로 지정했다고 가정합니다.
         content = data.get("action", {}).get("params", {}).get("content", "").strip()
     except KeyError:
         return jsonify(kakao_text("잘못된 요청입니다."))
@@ -294,7 +339,7 @@ def wish_add():
     if not content:
         return jsonify(kakao_text("찜할 내용을 찾을 수 없습니다."))
 
-    # DB에 저장
+    # 내부 함수 호출하여 DB에 저장
     save_wish(user_id, content)
     
     return jsonify(kakao_text(f"❤️ '{content}' 찜 목록에 저장 완료!"))
@@ -309,7 +354,7 @@ def wish_view():
     except KeyError:
         return jsonify(kakao_text("잘못된 요청입니다."))
 
-    # DB에서 해당 사용자의 찜 목록 읽어오기
+    # 내부 함수 호출하여 DB에서 해당 사용자의 찜 목록 읽어오기
     wishes = get_wishlist(user_id)
     
     if not wishes:
@@ -320,6 +365,7 @@ def wish_view():
     
     response_text = "⭐️ 나의 찜 목록 ⭐️\n\n" + "\n".join(result)
     return jsonify(kakao_text(response_text))
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
