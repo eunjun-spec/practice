@@ -56,16 +56,20 @@ def key_test():
         return jsonify(kakao_text("KEY 없음"))
     return jsonify(kakao_text(f"KEY 존재: {key[:15]}"))
 
-
 @app.route("/travel", methods=["POST"])
 def travel():
     data = request.get_json(silent=True) or {}
     
+    # 💡 카카오톡 챗봇 파라미터에서 country와 feeling을 각각 가져옵니다.
     country = data.get("action", {}).get("params", {}).get("country", "")
-    feeling = data.get("userRequest", {}).get("utterance", "").strip()
+    feeling = data.get("action", {}).get("params", {}).get("feeling", "").strip()
+    
+    # 만약 feeling 파라미터가 비어있을 때를 대비한 방어 코드 (선택사항)
+    if not feeling:
+        feeling = data.get("userRequest", {}).get("utterance", "").strip()
+
     area = "국내" if country == "in" else "해외"
 
-    # prompt에서 시스템 지침(역할 정의) 분리하기 위해 수정
     system_prompt = "당신은 여행 전문가입니다."
     user_prompt = f"""사용자가 {area} 여행을 원합니다.
 
@@ -83,9 +87,8 @@ def travel():
 다른 설명 없이 출력"""
 
     try:
-        # 4. Claude API 호출 방식으로 변경
         response = client.messages.create(
-            model="claude-3-5-sonnet-20241022",  # 추천 성능이 가장 뛰어난 Claude 3.5 Sonnet 모델
+            model="claude-3-5-sonnet-20241022",
             max_tokens=500,
             system=system_prompt,
             messages=[
@@ -93,7 +96,6 @@ def travel():
             ]
         )
         
-        # response.content[0].text 로 텍스트 추출
         return jsonify(kakao_text(response.content[0].text))
     except Exception as e:
         return jsonify(kakao_text(str(e)))
