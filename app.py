@@ -238,7 +238,7 @@ def travel_review():
         return jsonify(kakao_text("여행지 정보가 올바르게 전달되지 않았습니다."))
 
     # 1. 네이버 블로그 섹션 검색 URL로 변경 (검색어 입력)
-    search_query = f"{area} 여행 후기"
+    search_query = f"{area} 여행"
     encoded_query = urllib.parse.quote(search_query)
     url = f"https://section.blog.naver.com/Search/Post.naver?keyword={encoded_query}"
     
