@@ -5,8 +5,9 @@ import urllib.parse
 import requests
 from bs4 import BeautifulSoup
 from flask import Flask, jsonify, request
-# 1. Gemini 대신 Anthropic 클라이언트 임포트
-from anthropic import Anthropic
+
+# 1. Anthropic 대신 OpenAI 클라이언트 임포트
+from openai import OpenAI
 
 from db import (
     clear_state,
@@ -19,9 +20,11 @@ from db import (
 )
 
 app = Flask(__name__)
-# 💡 Render의 환경 변수를 직접 읽어와서 Anthropic 클라이언트에 넘겨줍니다.
-api_key = os.environ.get("ANTHROPIC_API_KEY")
-client = Anthropic(api_key=api_key)
+
+# 💡 Render 환경 변수에서 OpenAI 키를 가져옵니다. 
+# 만약 기존에 설정한 ANTHROPIC_API_KEY라는 이름을 그대로 쓰고 계셔도 작동하도록 fallback을 두었습니다.
+api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
+client = OpenAI(api_key=api_key)
 
 # ==========================================
 # ⭐️ [찜 기능] 내부 DB 로직 (app.py에 통합)
@@ -97,8 +100,8 @@ def home():
 
 @app.route("/key-test", methods=["GET", "POST"])
 def key_test():
-    # 3. API 키 검증 로직 변경
-    key = os.getenv("ANTHROPIC_API_KEY")
+    # API 키 검증 로직 (확인용)
+    key = os.environ.get("OPENAI_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
     if not key:
         return jsonify(kakao_text("KEY 없음"))
     return jsonify(kakao_text(f"KEY 존재: {key[:15]}"))
@@ -108,11 +111,9 @@ def key_test():
 def travel():
     data = request.get_json(silent=True) or {}
     
-    # 💡 카카오톡 챗봇 파라미터에서 country와 feeling을 각각 가져옵니다.
     country = data.get("action", {}).get("params", {}).get("country", "")
     feeling = data.get("action", {}).get("params", {}).get("feeling", "").strip()
     
-    # 만약 feeling 파라미터가 비어있을 때를 대비한 방어 코드 (선택사항)
     if not feeling:
         feeling = data.get("userRequest", {}).get("utterance", "").strip()
 
@@ -124,29 +125,32 @@ def travel():
 원하는 여행 스타일:
 {feeling}
 
-실존하는 여행지 2곳 추천
+실존하는 여행지 1곳 추천
 
 형식:
 
 1. 여행지명
 
-2. 여행지명
 
 다른 설명 없이 출력"""
 
     try:
-        response = client.messages.create(
-            model="claude-3-5-sonnet-20241022",
+        # 💡 OpenAI GPT-4o-mini 모델로 호출 문법 변경
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
             max_tokens=500,
-            system=system_prompt,
             messages=[
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ]
         )
         
-        return jsonify(kakao_text(response.content[0].text))
+        # 답변 텍스트 추출 방식 변경
+        ai_text = response.choices[0].message.content.strip()
+        return jsonify(kakao_text(ai_text))
+        
     except Exception as e:
-        return jsonify(kakao_text(str(e)))
+        return jsonify(kakao_text(f"OpenAI API 에러 발생: {str(e)}"))
 
 
 @app.route("/schedule_create", methods=["POST"])
@@ -215,7 +219,6 @@ def schedule_order():
     temp = state["temp"]
     places = temp["places"]
 
-    # 두 요소의 순서 바꿈
     places[a - 1], places[b - 1] = places[b - 1], places[a - 1]
     save_state(user_id, "place", temp)
 
@@ -285,7 +288,6 @@ def travel_review():
     if not area:
         return jsonify(kakao_text("여행지 정보가 올바르게 전달되지 않았습니다."))
 
-    # 1. 뷰티풀수프 크롤링을 위해 모바일 검색 URL로 변경 (더 가볍고 구조가 명확함)
     search_query = f"{area} 여행 후기"
     encoded_query = urllib.parse.quote(search_query)
     url = f"https://m.search.naver.com/search.naver?where=m_blog&query={encoded_query}"
@@ -298,11 +300,8 @@ def travel_review():
     }
 
     try:
-        # 카카오톡 3초 제한을 고려하여 타임아웃을 2.5초로 타이트하게 잡음
         r = requests.get(url, headers=headers, timeout=2.5)
         soup = BeautifulSoup(r.text, "html.parser")
-        
-        # 네이버 모바일 블로그 검색 결과의 본문 미리보기 클래스
         first_post = soup.select_one(".api_txt_lines.dsc_txt")
 
         if first_post:
@@ -330,15 +329,12 @@ def wish_add():
         return jsonify(kakao_text("잘못된 요청입니다."))
 
     if not content:
-        # 만약 파라미터가 비어있다면 사용자가 입력한 전체 대화 내용을 가져옵니다.
         content = data.get("userRequest", {}).get("utterance", "").strip()
 
     if not content:
         return jsonify(kakao_text("찜할 내용을 찾을 수 없습니다."))
 
-    # 내부 함수 호출하여 DB에 저장
     save_wish(user_id, content)
-    
     return jsonify(kakao_text(f"❤️ '{content}' 찜 목록에 저장 완료!"))
 
 
@@ -351,15 +347,11 @@ def wish_view():
     except KeyError:
         return jsonify(kakao_text("잘못된 요청입니다."))
 
-    # 내부 함수 호출하여 DB에서 해당 사용자의 찜 목록 읽어오기
     wishes = get_wishlist(user_id)
-    
     if not wishes:
         return jsonify(kakao_text("아직 찜한 내역이 없습니다."))
 
-    # 번호를 붙여서 리스트 형태로 포맷팅
     result = [f"{i}. {w}" for i, w in enumerate(wishes, 1)]
-    
     response_text = "⭐️ 나의 찜 목록 ⭐️\n\n" + "\n".join(result)
     return jsonify(kakao_text(response_text))
 
