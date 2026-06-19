@@ -126,7 +126,7 @@ def schedule_date():
         "end": end.strip(),
         "places": []
     })
-    return jsonify(kakao_text("장소를 계속 입력해주세요."))
+    return jsonify(kakao_text("계속하시려면 장소 버튼을 누르거나 장소를 입력해주세요"))
 
 
 @app.route("/schedule_place", methods=["POST"])
