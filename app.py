@@ -244,17 +244,24 @@ def travel_review():
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
             "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/120.0.0.0 Safari/537.36"
-        )
+            "Chrome/122.0.0.0 Safari/537.36"
+        ),
+        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7"
     }
 
     try:
         r = requests.get(url, headers=headers, timeout=5)
         soup = BeautifulSoup(r.text, "html.parser")
-        review_elements = soup.select("a.title_link")
+        
+        # 🔍 네이버 블로그 제목을 잡기 위해 최신 클래스명(api_txt_lines) 추가
+        review_elements = soup.select("a.api_txt_lines")
+        
+        # 만약 api_txt_lines로 못 잡으면 기존 title_link로 재시도
+        if not review_elements:
+            review_elements = soup.select("a.title_link")
 
         reviews = []
-        for element in review_elements[:2]:
+        for element in review_elements[:2]:  # 상위 2개만
             title = element.get_text(strip=True)
             if title:
                 reviews.append(title)
@@ -263,7 +270,7 @@ def travel_review():
             review_list = [f"{i+1}. {t}" for i, t in enumerate(reviews)]
             result = f"✈️ [{area}] 최신 여행 후기 검색 결과입니다:\n\n" + "\n\n".join(review_list)
         else:
-            result = f"[{area}]에 대한 최신 여행 후기를 찾지 못했습니다."
+            result = f"[{area}]에 대한 최신 여행 후기를 찾지 못했습니다. (구조 변경 가능성)"
 
     except Exception as e:
         result = f"여행 후기 크롤링 중 오류 발생: {str(e)}"
