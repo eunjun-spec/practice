@@ -357,6 +357,63 @@ def wish_view():
     response_text = "⭐️ 나의 찜 목록 ⭐️\n\n" + "\n".join(result)
     return jsonify(kakao_text(response_text))
 
+@app.route("/travel_news", methods=["POST"])
+def travel_news():
+    data = request.get_json(silent=True) or {}
+    
+    # 카카오톡 챗봇 파라미터에서 'area' (지역명) 추출
+    area = data.get("action", {}).get("params", {}).get("area", "").strip()
 
+    if not area:
+        return jsonify(kakao_text("여행지 정보가 올바르게 전달되지 않았습니다."))
+
+    # [지역명 + 여행] 키워드로 구글 뉴스(tbm=nws) 검색 URL 생성
+    search_query = f"{area} 여행"
+    query = urllib.parse.quote(search_query)
+    url = f"https://www.google.com/search?q={query}&tbm=nws&hl=ko&gl=kr"
+
+    # 💡 중요: 구글 봇 차단을 방지하기 위한 실제 브라우저 형태의 헤더 세팅
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7"
+    }
+
+    try:
+        # 카카오톡 3초 타임아웃 제한을 고려하여 2.5초 설정
+        r = requests.get(url, headers=headers, timeout=2.5)
+        
+        if r.status_code != 200:
+            return jsonify(kakao_text(f"⚠️ 구글 뉴스 접근 일시 제한 (Status: {r.status_code})"))
+
+        soup = BeautifulSoup(r.text, "html.parser")
+
+        # 구글 뉴스 탭의 최신 HTML 제목 선택자들 매칭
+        items = soup.select(".n0jPhd") or soup.select(".mCBkyc") or soup.select(".DKV0Md") or soup.select(".Y3v9Y")
+
+        titles = []
+        for item in items:
+            title = item.get_text(strip=True)
+            # 중복된 제목이나 빈 텍스트는 제외
+            if title and title not in titles:
+                titles.append(title)
+            # 💡 딱 2개만 모이면 즉시 수집 중단
+            if len(titles) == 2:
+                break
+
+        if titles:
+            # 깔끔하게 줄바꿈 포맷팅하여 응답 생성
+            news_list = "\n\n".join([f"📰 {i+1}. {t}" for i, t in enumerate(titles)])
+            result = f"✨ [{area}] 관련 최신 뉴스 2가지입니다:\n\n{news_list}"
+        else:
+            result = f"[{area}]에 대한 최근 뉴스 기사를 찾지 못했습니다."
+
+    except requests.exceptions.Timeout:
+        result = "⏱️ 뉴스 읽기 시간 초과가 발생했습니다. 잠시 후 다시 시도해주세요."
+    except Exception as e:
+        result = f"구글 뉴스 조회 중 오류 발생: {str(e)}"
+
+    return jsonify(kakao_text(result))
+    
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
