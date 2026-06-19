@@ -237,9 +237,10 @@ def travel_review():
     if not area:
         return jsonify(kakao_text("여행지 정보가 올바르게 전달되지 않았습니다."))
 
+    # 1. 네이버 블로그 섹션 검색 URL로 변경 (검색어 입력)
     search_query = f"{area} 여행 후기"
     encoded_query = urllib.parse.quote(search_query)
-    url = f"https://search.naver.com/search.naver?ssc=tab.blog.all&query={encoded_query}"
+    url = f"https://section.blog.naver.com/Search/Post.naver?keyword={encoded_query}"
     
     headers = {
         "User-Agent": (
@@ -247,34 +248,30 @@ def travel_review():
             "AppleWebKit/537.36 (KHTML, like Gecko) "
             "Chrome/122.0.0.0 Safari/537.36"
         ),
-        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7"
+        "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+        "Referer": "https://section.blog.naver.com/BlogHome.naver"
     }
 
     try:
         r = requests.get(url, headers=headers, timeout=5)
         soup = BeautifulSoup(r.text, "html.parser")
         
-        # 🔍 네이버 블로그 제목을 잡기 위해 최신 클래스명(api_txt_lines) 추가
-        review_elements = soup.select("a.api_txt_lines")
-        
-        # 만약 api_txt_lines로 못 잡으면 기존 title_link로 재시도
-        if not review_elements:
-            review_elements = soup.select("a.title_link")
+        # 2. 제시해주신 <a class="text"> 태그 선택자로 맨 위 글 1개만 매핑
+        first_post = soup.select_one("a.text")
 
-        reviews = []
-        for element in review_elements[:2]:  # 상위 2개만
-            title = element.get_text(strip=True)
-            if title:
-                reviews.append(title)
-
-        if reviews:
-            review_list = [f"{i+1}. {t}" for i, t in enumerate(reviews)]
-            result = f"✈️ [{area}] 최신 여행 후기 검색 결과입니다:\n\n" + "\n\n".join(review_list)
+        if first_post:
+            # 3. HTML 태그들을 다 걷어내고 순수한 글자(설명문)만 추출
+            description = first_post.get_text(separator=" ", strip=True)
+            
+            # 카카오톡 출력용 메시지 조립
+            result = f"✍️ [{area}] 최신 블로그 여행 후기 요약입니다:\n\n{description}"
         else:
-            result = f"[{area}]에 대한 최신 여행 후기를 찾지 못했습니다. (구조 변경 가능성)"
+            result = f"[{area}]에 대한 블로그 검색 결과를 찾지 못했습니다."
 
     except Exception as e:
         result = f"여행 후기 크롤링 중 오류 발생: {str(e)}"
+
+    return jsonify(kakao_text(result))
 
     return jsonify(kakao_text(result))
 
