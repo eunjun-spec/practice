@@ -17,6 +17,7 @@ from db import (
     save_state,
 )
 
+from db_wish import init_wish_db, save_wish, get_wishlist
 
 app = Flask(__name__)
 # 💡 Render의 환경 변수를 직접 읽어와서 Anthropic 클라이언트에 넘겨줍니다.
@@ -24,6 +25,7 @@ api_key = os.environ.get("ANTHROPIC_API_KEY")
 client = Anthropic(api_key=api_key)
 
 init_db()
+init_wish_db()
 
 
 def kakao_text(text):
@@ -274,7 +276,50 @@ def travel_review():
     return jsonify(kakao_text(result))
 
     return jsonify(kakao_text(result))
+@app.route("/wish_add", methods=["POST"])
+def wish_add():
+    data = request.get_json(silent=True) or {}
+    
+    try:
+        user_id = data["userRequest"]["user"]["id"]
+        # 카카오톡 챗봇 블록 설정에서 파라미터 이름을 'content'로 지정했다고 가정합니다.
+        content = data.get("action", {}).get("params", {}).get("content", "").strip()
+    except KeyError:
+        return jsonify(kakao_text("잘못된 요청입니다."))
 
+    if not content:
+        # 만약 파라미터가 비어있다면 사용자가 입력한 전체 대화 내용을 가져옵니다.
+        content = data.get("userRequest", {}).get("utterance", "").strip()
+
+    if not content:
+        return jsonify(kakao_text("찜할 내용을 찾을 수 없습니다."))
+
+    # DB에 저장
+    save_wish(user_id, content)
+    
+    return jsonify(kakao_text(f"❤️ '{content}' 찜 목록에 저장 완료!"))
+
+
+@app.route("/wish_view", methods=["POST"])
+def wish_view():
+    data = request.get_json(silent=True) or {}
+    
+    try:
+        user_id = data["userRequest"]["user"]["id"]
+    except KeyError:
+        return jsonify(kakao_text("잘못된 요청입니다."))
+
+    # DB에서 해당 사용자의 찜 목록 읽어오기
+    wishes = get_wishlist(user_id)
+    
+    if not wishes:
+        return jsonify(kakao_text("아직 찜한 내역이 없습니다."))
+
+    # 번호를 붙여서 리스트 형태로 포맷팅
+    result = [f"{i}. {w}" for i, w in enumerate(wishes, 1)]
+    
+    response_text = "⭐️ 나의 찜 목록 ⭐️\n\n" + "\n".join(result)
+    return jsonify(kakao_text(response_text))
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
