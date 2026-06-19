@@ -3,7 +3,6 @@ import json
 import urllib.parse
 import requests
 from bs4 import BeautifulSoup
-from dotenv import load_dotenv
 from flask import Flask, jsonify, request
 # 1. Gemini 대신 Anthropic 클라이언트 임포트
 from anthropic import Anthropic
@@ -18,12 +17,12 @@ from db import (
     save_state,
 )
 
-# 환경 변수 로드 및 초기화
-load_dotenv()
-app = Flask(__name__)
 
-# 2. Anthropic 클라이언트 초기화 (.env의 ANTHROPIC_API_KEY를 자동으로 읽어옵니다)
-client = Anthropic()
+app = Flask(__name__)
+# 💡 Render의 환경 변수를 직접 읽어와서 Anthropic 클라이언트에 넘겨줍니다.
+api_key = os.environ.get("ANTHROPIC_API_KEY")
+client = Anthropic(api_key=api_key)
+
 init_db()
 
 
